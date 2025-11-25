@@ -6,7 +6,10 @@
 % 2025 -- Rodrigo Monteiro Junior
 % IMP.pl
 
+:- public cval/3.
+
 :- use_module(library(dcg/basics)).
+:- use_module(library(clpfd)).
 
 paren(open) -->
 	[C],
@@ -43,12 +46,90 @@ first_symbol(S) -->
     }.
 % -----------------------------------
 
+cval(C0;C1, S0, Sn) :-
+    cval(C0, S0, S1),
+    cval(C1, S1, Sn).
+
+cval(skip, S0, S0).
+
+cval(X=A, S0, [X=N|S0]) :-
+    aval(A, S0, N).
+
+cval(if(B, C0, C1), S0, Sn) :-
+    bval(B, S0, T),
+    (	T==true
+    ->	cval(C0, S0, Sn)
+    ;	cval(C1, S0, Sn)
+    ).
+
+cval(while(B, C), S0, Sn) :-
+    bval(B, S0, T),
+    (	T==true
+    ->	cval(C;while(B, C), S0, Sn)
+    ;	Sn=S0 % no change in state
+    ).
+
+aval(int(I), _, I).
+aval(loc(X), S, N) :-
+    member(X=N, S).
+
+aval(add(A0, A1), S, N) :-
+    calc(+, A0, A1, S, N).
+
+aval(sub(A0, A1), S, N) :-
+    calc(-, A0, A1, S, N).
+
+aval(exp(A0, A1), S, N) :-
+    calc(^, A0, A1, S, N).
+
+aval(div(A0, A1), S, N) :-
+    calc(/, A0, A1, S, N).
+
+aval(mul(A0, A1), S, N) :-
+    calc(*, A0, A1, S, N).
+
+calc(Operator, A0, A1, S, N) :-
+    aval(A0, S, N0),
+    aval(A1, S, N1),
+    Expr =.. [Operator, N0, N1],
+    N #= Expr.
+
+bval_(true, _, true).
+bval_(false, _, false).
+
+bval_(and(B0, B1), S, true) :-
+    bval(B0, S, true),
+    bval(B1, S, true).
+
+bval_(or(B0, B1), S, true) :-
+    bval(B0, S, T0),
+    bval(B1, S, T1),
+    (T0=true;T1=true).
+
+bval_(eq(A0, A1), S, true) :-
+    aval(A0, S, N),
+    aval(A1, S, N).
+
+bval_(ge(A0, A1), S, true) :-
+    bval(eq(A0, A1), S, true)
+    ; (	aval(A0, S, N0),
+        aval(A1, S, N1),
+        N0 > N1
+      ).
+
+bval_(dif(A0, A1), S, true) :-
+    bval(eq(A0, A1), S, false).
+
+bval(Expr, S, true) :-
+    bval_(Expr, S, true), !.
+bval(_, _, false).
+
 % com------------------------------
 
 else(Cond, Clause, if(Cond, Clause, Else)) -->
     [0'e], "lse", !, blanks,
     computation(Else).
-else(Cond, Clause, if(Cond, Clause)) -->
+else(Cond, Clause, if(Cond, Clause, skip)) -->
     [].
 
 parse_if(IF) -->
@@ -101,7 +182,6 @@ computation(C) -->
 
 % boolean--------------------------
 cop(ge)  --> [0'>], [0'=].
-cop(le)  --> [0'<], [0'=].
 cop(eq)  --> [0'=].
 cop(dif) --> [0'!].
 
@@ -116,9 +196,7 @@ cmp_r(A0, Cmp) -->
     }.
 
 bop(and) --> [0'&].
-bop(or)  --> [0'+].
-bop(if)  --> [0'-], [0'>].
-bop(iff) --> [0'<], [0'-], [0'>].
+bop(or)  --> [0'|].
 
 bexpr_r(B0, Expr) -->
     bop(Operator), !,
