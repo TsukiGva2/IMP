@@ -6,10 +6,9 @@
 % 2025 -- Rodrigo Monteiro Junior
 % IMP.pl
 
-:- public cval/3.
+:- public eval/2.
 
 :- use_module(library(dcg/basics)).
-:- use_module(library(clpfd)).
 
 paren(open) -->
 	[C],
@@ -46,20 +45,27 @@ first_symbol(S) -->
     }.
 % -----------------------------------
 
-cval(C0;C1, S0, Sn) :-
-    cval(C0, S0, S1),
-    cval(C1, S1, Sn).
+eval(Expr, Result) :-
+    cval(Expr, [], Result).
 
 cval(skip, S0, S0).
-
-cval(X=A, S0, [X=N|S0]) :-
-    aval(A, S0, N).
 
 cval(if(B, C0, C1), S0, Sn) :-
     bval(B, S0, T),
     (	T==true
     ->	cval(C0, S0, Sn)
     ;	cval(C1, S0, Sn)
+    ).
+
+cval(disp(X), S0, S0) :-
+    aval(X, S0, N),
+    write(N), nl.
+
+cval(X=A, S0, Sn) :-
+    aval(A, S0, N),
+    (	select(X=_,S0,S1)
+    ->	!, Sn=[X=N|S1]
+    ;	   Sn=[X=N|S0]
     ).
 
 cval(while(B, C), S0, Sn) :-
@@ -69,9 +75,13 @@ cval(while(B, C), S0, Sn) :-
     ;	Sn=S0 % no change in state
     ).
 
+cval(C0;C1, S0, Sn) :-
+    cval(C0, S0, S1),
+    cval(C1, S1, Sn).
+
 aval(int(I), _, I).
 aval(loc(X), S, N) :-
-    member(X=N, S).
+    once(member(X=N, S)).
 
 aval(add(A0, A1), S, N) :-
     calc(+, A0, A1, S, N).
@@ -92,7 +102,7 @@ calc(Operator, A0, A1, S, N) :-
     aval(A0, S, N0),
     aval(A1, S, N1),
     Expr =.. [Operator, N0, N1],
-    N #= Expr.
+    N is Expr.
 
 bval_(true, _, true).
 bval_(false, _, false).
@@ -118,7 +128,9 @@ bval_(ge(A0, A1), S, true) :-
       ).
 
 bval_(dif(A0, A1), S, true) :-
-    bval(eq(A0, A1), S, false).
+    aval(A0, S, N0),
+    aval(A1, S, N1),
+    N0 =\= N1.
 
 bval(Expr, S, true) :-
     bval_(Expr, S, true), !.
@@ -145,10 +157,18 @@ parse_while(while(B, Clause)) -->
     "do",             blanks,
     computation(Clause).
 
+parse_disp(disp(Expr)) -->
+    blanks,
+    aexpr(Expr).
+
 com(I=A) -->
     identifier(I), blanks,
     ":=", !,       blanks,
     aexpr(A).
+
+com(DISP) -->
+    [0'd], "isp", !,
+    parse_disp(DISP).
 
 com(WHILE) -->
     [0'w], "hile", !,
